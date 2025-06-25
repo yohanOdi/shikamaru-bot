@@ -1,4 +1,14 @@
-const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+case 'coach':
+                await handleCoachCommand(interaction);
+                break;
+            case 'vote':
+                await handleVoteCommand(interaction);
+                break;            case 'vote':
+                await handleVoteCommand(interaction);
+                break;
+            case 'admin':
+                await handleAdminCommand(interaction);
+                break;const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 
@@ -85,8 +95,9 @@ const commands = [
                 .setDescription('Créer un événement (entraînement, match, etc.)')
                 .addStringOption(opt => opt.setName('type').setDescription('Type d\'événement').setRequired(true)
                     .addChoices(
-                        { name: '🎯 Entraînement', value: 'entrainement' },
-                        { name: '⚔️ Match officiel', value: 'match' },
+                        { name: '🎯 Entraînement 4v4', value: 'entrainement_4v4' },
+                        { name: '🎯 Entraînement 6v4', value: 'entrainement_6v4' },
+                        { name: '⚔️ Match officiel 4v4', value: 'match_4v4' },
                         { name: '🤝 Match amical', value: 'amical' },
                         { name: '📺 Review de match', value: 'review' },
                         { name: '🎉 Événement team building', value: 'teambuilding' }
@@ -127,12 +138,11 @@ const commands = [
         )
         .addSubcommand(sub =>
             sub.setName('lineup')
-                .setDescription('Définir la composition pour le prochain match')
+                .setDescription('Définir la composition pour le prochain match (4v4)')
                 .addUserOption(opt => opt.setName('joueur1').setDescription('Joueur 1').setRequired(true))
                 .addUserOption(opt => opt.setName('joueur2').setDescription('Joueur 2').setRequired(true))
                 .addUserOption(opt => opt.setName('joueur3').setDescription('Joueur 3').setRequired(true))
                 .addUserOption(opt => opt.setName('joueur4').setDescription('Joueur 4').setRequired(true))
-                .addUserOption(opt => opt.setName('joueur5').setDescription('Joueur 5').setRequired(true))
         ),
 
     // Commande de suivi d'investissement (temps vocal, participation)
@@ -205,7 +215,30 @@ const commands = [
                 .addStringOption(opt => opt.setName('message').setDescription('Votre message motivant').setRequired(true))
         ),
 
-    // Commandes coach simplifiées
+    // Commande admin pour Strat Unit
+    new SlashCommandBuilder()
+        .setName('admin')
+        .setDescription('Commandes administrateur (Strat Unit uniquement)')
+        .addSubcommand(sub =>
+            sub.setName('reset')
+                .setDescription('Remettre à zéro les données')
+                .addStringOption(opt => opt.setName('type').setDescription('Type de données à reset').setRequired(true)
+                    .addChoices(
+                        { name: '📊 Investissement', value: 'investment' },
+                        { name: '🎯 Objectifs', value: 'objectives' },
+                        { name: '⚔️ Matchs', value: 'matches' },
+                        { name: '📝 Notes coachs', value: 'notes' },
+                        { name: '🔄 Tout remettre à zéro', value: 'all' }
+                    ))
+        )
+        .addSubcommand(sub =>
+            sub.setName('stats')
+                .setDescription('Statistiques globales du bot')
+        )
+        .addSubcommand(sub =>
+            sub.setName('backup')
+                .setDescription('Créer une sauvegarde des données')
+        ),
     new SlashCommandBuilder()
         .setName('coach')
         .setDescription('Outils pour les coachs')
@@ -273,8 +306,8 @@ client.on('interactionCreate', async interaction => {
             case 'motivation':
                 await handleMotivationCommand(interaction);
                 break;
-            case 'coach':
-                await handleCoachCommand(interaction);
+            case 'admin':
+                await handleAdminCommand(interaction);
                 break;
         }
     } catch (error) {
@@ -302,8 +335,9 @@ async function handleEventCommand(interaction) {
                 const session = TrainingSession.create(interaction.user.id, date.toISOString(), description, type);
 
                 const typeEmojis = {
-                    entrainement: '🎯',
-                    match: '⚔️',
+                    entrainement_4v4: '🎯',
+                    entrainement_6v4: '🎯',
+                    match_4v4: '⚔️',
                     amical: '🤝',
                     review: '📺',
                     teambuilding: '🎉'
@@ -344,8 +378,9 @@ async function handleEventCommand(interaction) {
                 const date = new Date(session.date);
                 const organizer = client.users.cache.get(session.coach);
                 const typeEmojis = {
-                    entrainement: '🎯',
-                    match: '⚔️',
+                    entrainement_4v4: '🎯',
+                    entrainement_6v4: '🎯',
+                    match_4v4: '⚔️',
                     amical: '🤝',
                     review: '📺',
                     teambuilding: '🎉'
@@ -449,8 +484,7 @@ async function handleTeamCommand(interaction) {
         case 'lineup':
             // Vérification si l'utilisateur est coach
             const isCoach = interaction.member.roles.cache.some(role => 
-                role.name.toLowerCase().includes('coach') || 
-                role.name.toLowerCase().includes('manager')
+                role.name.toLowerCase().includes('coach unit')
             );
             
             if (!isCoach) {
@@ -459,7 +493,7 @@ async function handleTeamCommand(interaction) {
             }
 
             const lineup = [];
-            for (let i = 1; i <= 5; i++) {
+            for (let i = 1; i <= 4; i++) {
                 const player = interaction.options.getUser(`joueur${i}`);
                 lineup.push(player);
             }
@@ -473,8 +507,8 @@ async function handleTeamCommand(interaction) {
             Database.save('lineup', lineupData);
             
             const lineupEmbed = new EmbedBuilder()
-                .setTitle('⚔️ Composition définie')
-                .setDescription('Lineup pour le prochain match :')
+                .setTitle('⚔️ Lineup Match 4v4')
+                .setDescription('Composition officielle pour le prochain match :')
                 .addFields(
                     lineup.map((player, index) => ({
                         name: `Joueur ${index + 1}`,
@@ -483,6 +517,7 @@ async function handleTeamCommand(interaction) {
                     }))
                 )
                 .setColor(0x00ff99)
+                .setFooter({ text: 'Match compétitif EVA Battle Arena 4v4' })
                 .setTimestamp();
             
             await interaction.reply({ embeds: [lineupEmbed] });
@@ -752,18 +787,258 @@ async function handleMotivationCommand(interaction) {
     }
 }
 
+// Gestionnaire des votes
+async function handleVoteCommand(interaction) {
+    const subcommand = interaction.options.getSubcommand();
+
+    switch (subcommand) {
+        case 'creer':
+            const type = interaction.options.getString('type');
+            const question = interaction.options.getString('question');
+            const optionsStr = interaction.options.getString('options');
+            const duree = interaction.options.getInteger('duree') || 24;
+
+            const options = optionsStr.split('|').map(opt => opt.trim());
+            
+            if (options.length < 2) {
+                await interaction.reply({ content: '❌ Il faut au moins 2 options séparées par |', ephemeral: true });
+                return;
+            }
+
+            if (options.length > 10) {
+                await interaction.reply({ content: '❌ Maximum 10 options par vote', ephemeral: true });
+                return;
+            }
+
+            const votes = Database.load('votes');
+            const voteId = Date.now().toString();
+            const endTime = new Date(Date.now() + duree * 60 * 60 * 1000);
+
+            votes[voteId] = {
+                id: voteId,
+                type,
+                question,
+                options,
+                votes: {}, // userId: optionIndex
+                createdBy: interaction.user.id,
+                createdAt: new Date().toISOString(),
+                endTime: endTime.toISOString(),
+                active: true
+            };
+
+            Database.save('votes', votes);
+
+            // Créer les boutons de vote
+            const buttons = options.slice(0, 5).map((option, index) => 
+                new ButtonBuilder()
+                    .setCustomId(`vote_${voteId}_${index}`)
+                    .setLabel(`${index + 1}. ${option}`)
+                    .setStyle(ButtonStyle.Primary)
+            );
+
+            const row1 = new ActionRowBuilder().addComponents(buttons);
+            let row2 = null;
+
+            // Si plus de 5 options, créer une deuxième rangée
+            if (options.length > 5) {
+                const buttons2 = options.slice(5, 10).map((option, index) => 
+                    new ButtonBuilder()
+                        .setCustomId(`vote_${voteId}_${index + 5}`)
+                        .setLabel(`${index + 6}. ${option}`)
+                        .setStyle(ButtonStyle.Primary)
+                );
+                row2 = new ActionRowBuilder().addComponents(buttons2);
+            }
+
+            const typeEmojis = {
+                map_preference: '🗺️',
+                strategy: '⚔️',
+                training_time: '📅',
+                objective: '🎯',
+                custom: '❓'
+            };
+
+            const voteEmbed = new EmbedBuilder()
+                .setTitle(`${typeEmojis[type]} ${question}`)
+                .setDescription(`**Options disponibles :**\n${options.map((opt, i) => `${i + 1}. ${opt}`).join('\n')}\n\n🕐 **Se termine :** ${endTime.toLocaleDateString('fr-FR')} à ${endTime.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`)
+                .addFields(
+                    { name: 'ID du Vote', value: `\`${voteId}\``, inline: true },
+                    { name: 'Créé par', value: `<@${interaction.user.id}>`, inline: true },
+                    { name: 'Participants', value: '0/6 joueurs', inline: true }
+                )
+                .setColor(0x00aaff)
+                .setFooter({ text: 'Cliquez sur les boutons pour voter !' })
+                .setTimestamp();
+
+            const components = row2 ? [row1, row2] : [row1];
+            await interaction.reply({ embeds: [voteEmbed], components });
+            break;
+
+        case 'liste':
+            const allVotes = Database.load('votes');
+            const activeVotes = Object.values(allVotes).filter(v => v.active);
+
+            if (activeVotes.length === 0) {
+                await interaction.reply('🗳️ Aucun vote en cours pour le moment.');
+                return;
+            }
+
+            const listEmbed = new EmbedBuilder()
+                .setTitle('🗳️ Votes en cours')
+                .setColor(0x00aaff);
+
+            activeVotes.forEach(vote => {
+                const creator = client.users.cache.get(vote.createdBy);
+                const endTime = new Date(vote.endTime);
+                const voteCount = Object.keys(vote.votes).length;
+                
+                listEmbed.addFields({
+                    name: vote.question,
+                    value: `**ID:** \`${vote.id}\`\n**Créé par:** ${creator?.displayName || 'Inconnu'}\n**Votes:** ${voteCount}/6\n**Fin:** ${endTime.toLocaleDateString('fr-FR')} ${endTime.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`,
+                    inline: false
+                });
+            });
+
+            await interaction.reply({ embeds: [listEmbed] });
+            break;
+
+        case 'resultats':
+            const voteId = interaction.options.getString('vote_id');
+            const allVotes2 = Database.load('votes');
+            const vote = allVotes2[voteId];
+
+            if (!vote) {
+                await interaction.reply({ content: '❌ Vote introuvable.', ephemeral: true });
+                return;
+            }
+
+            // Compter les votes
+            const results = {};
+            vote.options.forEach((option, index) => {
+                results[index] = { option, count: 0, voters: [] };
+            });
+
+            Object.entries(vote.votes).forEach(([userId, optionIndex]) => {
+                results[optionIndex].count++;
+                const user = client.users.cache.get(userId);
+                results[optionIndex].voters.push(user?.displayName || 'Inconnu');
+            });
+
+            // Trier par nombre de votes
+            const sortedResults = Object.values(results).sort((a, b) => b.count - a.count);
+
+            const resultsEmbed = new EmbedBuilder()
+                .setTitle(`📊 Résultats : ${vote.question}`)
+                .setDescription(`**Total des votes :** ${Object.keys(vote.votes).length}/6 joueurs`)
+                .setColor(vote.active ? 0x00aaff : 0x00ff00)
+                .setFooter({ text: vote.active ? 'Vote en cours' : 'Vote terminé' })
+                .setTimestamp();
+
+            sortedResults.forEach((result, index) => {
+                const medal = index === 0 && result.count > 0 ? '🥇 ' : index === 1 && result.count > 0 ? '🥈 ' : index === 2 && result.count > 0 ? '🥉 ' : '';
+                const percentage = Object.keys(vote.votes).length > 0 ? Math.round((result.count / Object.keys(vote.votes).length) * 100) : 0;
+                
+                resultsEmbed.addFields({
+                    name: `${medal}${result.option}`,
+                    value: `**${result.count} votes** (${percentage}%)\n${result.voters.length > 0 ? `Votants: ${result.voters.join(', ')}` : 'Aucun vote'}`,
+                    inline: false
+                });
+            });
+
+            await interaction.reply({ embeds: [resultsEmbed] });
+            break;
+
+        case 'fermer':
+            // Vérification Coach Unit
+            const isCoach = interaction.member.roles.cache.some(role => 
+                role.name.toLowerCase().includes('coach unit')
+            );
+            
+            if (!isCoach) {
+                await interaction.reply({ content: '❌ Seuls les Coach Unit peuvent fermer un vote.', ephemeral: true });
+                return;
+            }
+
+            const closeVoteId = interaction.options.getString('vote_id');
+            const allVotes3 = Database.load('votes');
+            
+            if (!allVotes3[closeVoteId]) {
+                await interaction.reply({ content: '❌ Vote introuvable.', ephemeral: true });
+                return;
+            }
+
+            allVotes3[closeVoteId].active = false;
+            allVotes3[closeVoteId].closedBy = interaction.user.id;
+            allVotes3[closeVoteId].closedAt = new Date().toISOString();
+            
+            Database.save('votes', allVotes3);
+
+            await interaction.reply(`✅ Vote fermé par ${interaction.user.displayName}. Utilisez \`/vote resultats ${closeVoteId}\` pour voir les résultats finaux.`);
+            break;
+    }
+}
+
+// Gestionnaire des interactions des boutons de vote
+client.on('interactionCreate', async interaction => {
+    if (!interaction.isButton()) return;
+
+    if (interaction.customId.startsWith('vote_')) {
+        const [, voteId, optionIndex] = interaction.customId.split('_');
+        const votes = Database.load('votes');
+        const vote = votes[voteId];
+
+        if (!vote || !vote.active) {
+            await interaction.reply({ content: '❌ Ce vote n\'est plus actif.', ephemeral: true });
+            return;
+        }
+
+        // Vérifier si le vote n'est pas expiré
+        if (new Date() > new Date(vote.endTime)) {
+            vote.active = false;
+            Database.save('votes', votes);
+            await interaction.reply({ content: '❌ Ce vote a expiré.', ephemeral: true });
+            return;
+        }
+
+        // Enregistrer le vote
+        vote.votes[interaction.user.id] = parseInt(optionIndex);
+        Database.save('votes', votes);
+
+        const selectedOption = vote.options[optionIndex];
+        await interaction.reply({ 
+            content: `✅ Vote enregistré pour : **${selectedOption}**\n\nUtilisez \`/vote resultats ${voteId}\` pour voir les résultats actuels.`, 
+            ephemeral: true 
+        });
+
+        // Mettre à jour l'embed original avec le nouveau nombre de participants
+        const voteCount = Object.keys(vote.votes).length;
+        const originalEmbed = interaction.message.embeds[0];
+        const updatedEmbed = new EmbedBuilder(originalEmbed.toJSON());
+        
+        // Mettre à jour le champ participants
+        const fields = updatedEmbed.toJSON().fields;
+        fields[2] = { name: 'Participants', value: `${voteCount}/6 joueurs`, inline: true };
+        updatedEmbed.setFields(fields);
+
+        try {
+            await interaction.message.edit({ embeds: [updatedEmbed], components: interaction.message.components });
+        } catch (error) {
+            // Ignore les erreurs de modification de message
+        }
+    }
+});
+
 // Gestionnaire des commandes coach (simplifié)
 async function handleCoachCommand(interaction) {
     const subcommand = interaction.options.getSubcommand();
     
     // Vérification si l'utilisateur est coach
     const isCoach = interaction.member.roles.cache.some(role => 
-        role.name.toLowerCase().includes('coach') || 
-        role.name.toLowerCase().includes('manager')
+        role.name.toLowerCase().includes('coach unit')
     );
     
     if (!isCoach) {
-        await interaction.reply({ content: '❌ Cette commande est réservée aux coachs.', ephemeral: true });
+        await interaction.reply({ content: '❌ Cette commande est réservée aux Coach Unit.', ephemeral: true });
         return;
     }
 
@@ -964,6 +1239,37 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
+// Fermeture automatique des votes expirés
+setInterval(() => {
+    const votes = Database.load('votes');
+    const now = new Date();
+    let hasChanges = false;
+    
+    Object.values(votes).forEach(vote => {
+        if (vote.active && new Date(vote.endTime) < now) {
+            vote.active = false;
+            vote.autoClosedAt = now.toISOString();
+            hasChanges = true;
+            
+            // Optionnel : notifier dans le channel général
+            const channel = client.channels.cache.find(ch => ch.name === 'général');
+            if (channel && Object.keys(vote.votes).length > 0) {
+                const embed = new EmbedBuilder()
+                    .setTitle('🗳️ Vote terminé automatiquement')
+                    .setDescription(`**${vote.question}**\n\nVote fermé automatiquement après expiration.\nUtilisez \`/vote resultats ${vote.id}\` pour voir les résultats.`)
+                    .setColor(0xff9900)
+                    .setTimestamp();
+                
+                channel.send({ embeds: [embed] });
+            }
+        }
+    });
+    
+    if (hasChanges) {
+        Database.save('votes', votes);
+    }
+}, 10 * 60 * 1000); // Vérification toutes les 10 minutes
+
 // Rappels d'événements (1 heure avant)
 setInterval(() => {
     const sessions = TrainingSession.getUpcoming();
@@ -1039,13 +1345,18 @@ client.on('interactionCreate', async interaction => {
                     inline: false
                 },
                 {
+                    name: '🗳️ Votes',
+                    value: '`/vote creer` - Créer un vote\n`/vote liste` - Votes en cours\n`/vote resultats` - Voir les résultats',
+                    inline: false
+                },
+                {
                     name: '💪 Motivation',
                     value: '`/motivation citation` - Citation motivante\n`/motivation message` - Message personnalisé',
                     inline: false
                 },
                 {
-                    name: '👨‍🏫 Coachs uniquement',
-                    value: '`/coach note` - Ajouter une note d\'équipe\n`/coach notes` - Voir les notes\n`/coach bilan` - Bilan complet',
+                    name: '👨‍🏫 Coach Unit uniquement',
+                    value: '`/coach note` - Ajouter une note d\'équipe\n`/coach notes` - Voir les notes\n`/coach bilan` - Bilan complet\n`/vote fermer` - Fermer un vote',
                     inline: false
                 }
             )
@@ -1078,4 +1389,4 @@ client.once('ready', () => {
 });
 
 // Démarrage du bot
-client.login(process.env.DISCORD_TOKEN);
+client.login('VOTRE_TOKEN_BOT_DISCORD');
