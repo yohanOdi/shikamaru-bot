@@ -391,7 +391,7 @@ async function handleTeamCommand(interaction) {
             };
             Database.save('roles', roles);
 
-            const roleNames = {
+            const roleNamesTeam = {
                 assault: 'Assault',
                 support: 'Support',
                 sniper: 'Sniper',
@@ -401,7 +401,7 @@ async function handleTeamCommand(interaction) {
 
             const embed = new EmbedBuilder()
                 .setTitle('⚔️ Rôle assigné')
-                .setDescription(`${joueur.displayName} a été assigné au rôle **${roleNames[role]}**`)
+                .setDescription(`${joueur.displayName} a été assigné au rôle **${roleNamesTeam[role]}**`)
                 .setColor(0xff0099)
                 .setTimestamp();
 
@@ -421,7 +421,7 @@ async function handleTeamCommand(interaction) {
                 .setTitle('⚔️ Composition de l\'équipe')
                 .setColor(0xff0099);
 
-            const roleNames = {
+            const roleNamesComposition = {
                 assault: '🔥 Assault',
                 support: '🛡️ Support',
                 sniper: '🎯 Sniper',
@@ -429,7 +429,7 @@ async function handleTeamCommand(interaction) {
                 igl: '👑 IGL (In-Game Leader)'
             };
 
-            Object.entries(roleNames).forEach(([roleKey, roleName]) => {
+            Object.entries(roleNamesComposition).forEach(([roleKey, roleName]) => {
                 const players = composition[roleKey] || [];
                 const playerNames = players.map(id => {
                     const user = client.users.cache.get(id);
