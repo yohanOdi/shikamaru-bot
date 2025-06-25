@@ -1,680 +1,3 @@
-case 'coach':
-                await handleCoachCommand(interaction);
-                break;
-            case 'vote':
-                await handleVoteCommand(interaction);
-                break;            case 'vote':
-                await handleVoteCommand(interaction);
-                break;
-            case 'admin':
-                await handleAdminCommand(interaction);
-                break;const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const fs = require('fs');
-const path = require('path');
-
-// Configuration du bot
-const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildVoiceStates
-    ]
-});
-
-// Base de données simple en fichier JSON
-const DB_PATH = './data/';
-if (!fs.existsSync(DB_PATH)) fs.mkdirSync(DB_PATH, { recursive: true });
-
-// Système de stockage des données
-class Database {
-    static load(file) {
-        const filepath = path.join(DB_PATH, `${file}.json`);
-        if (fs.existsSync(filepath)) {
-            return JSON.parse(fs.readFileSync(filepath, 'utf8'));
-        }
-        return {};
-    }
-
-    static save(file, data) {
-        const filepath = path.join(DB_PATH, `${file}.json`);
-        fs.writeFileSync(filepath, JSON.stringify(data, null, 2));
-    }
-}
-
-// Gestion des sessions d'entraînement
-class TrainingSession {
-    static create(coachId, date, description, type = 'entrainement') {
-        const sessions = Database.load('training');
-        const id = Date.now().toString();
-        
-        sessions[id] = {
-            id,
-            coach: coachId,
-            date,
-            description,
-            type,
-            participants: [],
-            status: 'planifiee',
-            created: new Date().toISOString()
-        };
-        
-        Database.save('training', sessions);
-        return sessions[id];
-    }
-
-    static getUpcoming() {
-        const sessions = Database.load('training');
-        const now = new Date();
-        
-        return Object.values(sessions)
-            .filter(s => new Date(s.date) > now)
-            .sort((a, b) => new Date(a.date) - new Date(b.date));
-    }
-
-    static addParticipant(sessionId, userId) {
-        const sessions = Database.load('training');
-        if (sessions[sessionId] && !sessions[sessionId].participants.includes(userId)) {
-            sessions[sessionId].participants.push(userId);
-            Database.save('training', sessions);
-            return true;
-        }
-        return false;
-    }
-}
-
-// Commandes slash
-const commands = [
-    // Commande pour les entraînements et événements
-    new SlashCommandBuilder()
-        .setName('event')
-        .setDescription('Gère les événements d\'équipe')
-        .addSubcommand(sub => 
-            sub.setName('creer')
-                .setDescription('Créer un événement (entraînement, match, etc.)')
-                .addStringOption(opt => opt.setName('type').setDescription('Type d\'événement').setRequired(true)
-                    .addChoices(
-                        { name: '🎯 Entraînement 4v4', value: 'entrainement_4v4' },
-                        { name: '🎯 Entraînement 6v4', value: 'entrainement_6v4' },
-                        { name: '⚔️ Match officiel 4v4', value: 'match_4v4' },
-                        { name: '🤝 Match amical', value: 'amical' },
-                        { name: '📺 Review de match', value: 'review' },
-                        { name: '🎉 Événement team building', value: 'teambuilding' }
-                    ))
-                .addStringOption(opt => opt.setName('date').setDescription('Date (DD/MM/YYYY HH:MM)').setRequired(true))
-                .addStringOption(opt => opt.setName('description').setDescription('Description de l\'événement').setRequired(true))
-        )
-        .addSubcommand(sub =>
-            sub.setName('liste')
-                .setDescription('Voir les prochains événements')
-        )
-        .addSubcommand(sub =>
-            sub.setName('participer')
-                .setDescription('Confirmer sa participation à un événement')
-                .addStringOption(opt => opt.setName('event_id').setDescription('ID de l\'événement').setRequired(true))
-        ),
-
-    // Commande pour la gestion des rôles dans l'équipe
-    new SlashCommandBuilder()
-        .setName('equipe')
-        .setDescription('Gestion de l\'équipe')
-        .addSubcommand(sub =>
-            sub.setName('role')
-                .setDescription('Assigner un rôle EVA à un joueur')
-                .addUserOption(opt => opt.setName('joueur').setDescription('Le joueur').setRequired(true))
-                .addStringOption(opt => opt.setName('role').setDescription('Rôle EVA').setRequired(true)
-                    .addChoices(
-                        { name: 'Assault', value: 'assault' },
-                        { name: 'Support', value: 'support' },
-                        { name: 'Sniper', value: 'sniper' },
-                        { name: 'Flanker', value: 'flanker' },
-                        { name: 'IGL (In-Game Leader)', value: 'igl' }
-                    ))
-        )
-        .addSubcommand(sub =>
-            sub.setName('composition')
-                .setDescription('Voir la composition actuelle de l\'équipe')
-        )
-        .addSubcommand(sub =>
-            sub.setName('lineup')
-                .setDescription('Définir la composition pour le prochain match (4v4)')
-                .addUserOption(opt => opt.setName('joueur1').setDescription('Joueur 1').setRequired(true))
-                .addUserOption(opt => opt.setName('joueur2').setDescription('Joueur 2').setRequired(true))
-                .addUserOption(opt => opt.setName('joueur3').setDescription('Joueur 3').setRequired(true))
-                .addUserOption(opt => opt.setName('joueur4').setDescription('Joueur 4').setRequired(true))
-        ),
-
-    // Commande de suivi d'investissement (temps vocal, participation)
-    new SlashCommandBuilder()
-        .setName('investissement')
-        .setDescription('Suivi de l\'investissement des joueurs')
-        .addSubcommand(sub =>
-            sub.setName('voir')
-                .setDescription('Voir l\'investissement d\'un joueur')
-                .addUserOption(opt => opt.setName('joueur').setDescription('Le joueur'))
-        )
-        .addSubcommand(sub =>
-            sub.setName('classement')
-                .setDescription('Classement d\'investissement de l\'équipe')
-        ),
-
-    // Commande pour les objectifs d'équipe
-    new SlashCommandBuilder()
-        .setName('objectif')
-        .setDescription('Gestion des objectifs d\'équipe')
-        .addSubcommand(sub =>
-            sub.setName('definir')
-                .setDescription('Définir un nouvel objectif')
-                .addStringOption(opt => opt.setName('titre').setDescription('Titre de l\'objectif').setRequired(true))
-                .addStringOption(opt => opt.setName('description').setDescription('Description détaillée').setRequired(true))
-                .addStringOption(opt => opt.setName('echeance').setDescription('Date limite (DD/MM/YYYY)'))
-        )
-        .addSubcommand(sub =>
-            sub.setName('liste')
-                .setDescription('Voir tous les objectifs en cours')
-        )
-        .addSubcommand(sub =>
-            sub.setName('completer')
-                .setDescription('Marquer un objectif comme accompli')
-                .addStringOption(opt => opt.setName('objectif_id').setDescription('ID de l\'objectif').setRequired(true))
-        ),
-
-    // Commande pour les résultats de matchs (simple)
-    new SlashCommandBuilder()
-        .setName('match')
-        .setDescription('Gestion des résultats de matchs')
-        .addSubcommand(sub =>
-            sub.setName('resultat')
-                .setDescription('Enregistrer le résultat d\'un match')
-                .addStringOption(opt => opt.setName('adversaire').setDescription('Équipe adverse').setRequired(true))
-                .addStringOption(opt => opt.setName('resultat').setDescription('Résultat').setRequired(true)
-                    .addChoices(
-                        { name: '✅ Victoire', value: 'victoire' },
-                        { name: '❌ Défaite', value: 'defaite' }
-                    ))
-                .addStringOption(opt => opt.setName('score').setDescription('Score (ex: 13-8)'))
-                .addStringOption(opt => opt.setName('notes').setDescription('Notes sur le match'))
-        )
-        .addSubcommand(sub =>
-            sub.setName('historique')
-                .setDescription('Voir l\'historique des matchs')
-        ),
-
-    // Commande de motivation manuelle
-    new SlashCommandBuilder()
-        .setName('motivation')
-        .setDescription('Messages de motivation pour l\'équipe')
-        .addSubcommand(sub =>
-            sub.setName('citation')
-                .setDescription('Afficher une citation motivante')
-        )
-        .addSubcommand(sub =>
-            sub.setName('message')
-                .setDescription('Envoyer un message motivant personnalisé')
-                .addStringOption(opt => opt.setName('message').setDescription('Votre message motivant').setRequired(true))
-        ),
-
-    // Commande admin pour Strat Unit
-    new SlashCommandBuilder()
-        .setName('admin')
-        .setDescription('Commandes administrateur (Strat Unit uniquement)')
-        .addSubcommand(sub =>
-            sub.setName('reset')
-                .setDescription('Remettre à zéro les données')
-                .addStringOption(opt => opt.setName('type').setDescription('Type de données à reset').setRequired(true)
-                    .addChoices(
-                        { name: '📊 Investissement', value: 'investment' },
-                        { name: '🎯 Objectifs', value: 'objectives' },
-                        { name: '⚔️ Matchs', value: 'matches' },
-                        { name: '📝 Notes coachs', value: 'notes' },
-                        { name: '🔄 Tout remettre à zéro', value: 'all' }
-                    ))
-        )
-        .addSubcommand(sub =>
-            sub.setName('stats')
-                .setDescription('Statistiques globales du bot')
-        )
-        .addSubcommand(sub =>
-            sub.setName('backup')
-                .setDescription('Créer une sauvegarde des données')
-        ),
-    new SlashCommandBuilder()
-        .setName('coach')
-        .setDescription('Outils pour les coachs')
-        .addSubcommand(sub =>
-            sub.setName('note')
-                .setDescription('Ajouter une note d\'équipe')
-                .addStringOption(opt => opt.setName('sujet').setDescription('Sujet de la note').setRequired(true))
-                .addStringOption(opt => opt.setName('contenu').setDescription('Contenu de la note').setRequired(true))
-        )
-        .addSubcommand(sub =>
-            sub.setName('notes')
-                .setDescription('Voir toutes les notes d\'équipe')
-        )
-        .addSubcommand(sub =>
-            sub.setName('bilan')
-                .setDescription('Faire un bilan d\'équipe')
-        )
-];
-
-// Citations motivantes pour l'e-sport
-const motivationalQuotes = [
-    "🔥 **Division 2 nous attend !** Chaque match nous rapproche de notre objectif !",
-    "⚔️ **L'équipe qui communique ensemble, gagne ensemble !** Notre coordination fait la différence !",
-    "🎯 **Précision, stratégie, teamwork !** EVA Battle Arena récompense les équipes organisées !",
-    "💪 **De Division 3 à Division 1 !** Un pas à la fois, mais toujours vers le haut !",
-    "🏆 **Chaque entraînement compte !** C'est notre investissement qui paiera !",
-    "🚀 **Nous sommes les pionniers de l'e-sport VR !** Montrons l'exemple !",
-    "⭐ **Nos coachs nous guident, notre détermination nous mène à la victoire !**"
-];
-
-// Événement de connexion du bot
-client.once('ready', () => {
-    console.log(`🎮 Bot EVA Team connecté en tant que ${client.user.tag}`);
-    
-    // Mise à jour du statut
-    client.user.setActivity('EVA Battle Arena | Division 3 → Division 2', { type: 'PLAYING' });
-    
-    // Enregistrement des commandes slash
-    client.application.commands.set(commands);
-});
-
-// Gestion des commandes slash
-client.on('interactionCreate', async interaction => {
-    if (!interaction.isCommand()) return;
-
-    const { commandName } = interaction;
-
-    try {
-        switch (commandName) {
-            case 'event':
-                await handleEventCommand(interaction);
-                break;
-            case 'equipe':
-                await handleTeamCommand(interaction);
-                break;
-            case 'investissement':
-                await handleInvestmentCommand(interaction);
-                break;
-            case 'objectif':
-                await handleObjectiveCommand(interaction);
-                break;
-            case 'match':
-                await handleMatchCommand(interaction);
-                break;
-            case 'motivation':
-                await handleMotivationCommand(interaction);
-                break;
-            case 'admin':
-                await handleAdminCommand(interaction);
-                break;
-        }
-    } catch (error) {
-        console.error('Erreur lors de l\'exécution de la commande:', error);
-        await interaction.reply({ content: '❌ Une erreur s\'est produite lors de l\'exécution de la commande.', ephemeral: true });
-    }
-});
-
-// Gestionnaire des événements
-async function handleEventCommand(interaction) {
-    const subcommand = interaction.options.getSubcommand();
-
-    switch (subcommand) {
-        case 'creer':
-            const type = interaction.options.getString('type');
-            const dateStr = interaction.options.getString('date');
-            const description = interaction.options.getString('description');
-
-            try {
-                const [datePart, timePart] = dateStr.split(' ');
-                const [day, month, year] = datePart.split('/');
-                const [hour, minute] = timePart.split(':');
-                const date = new Date(year, month - 1, day, hour, minute);
-
-                const session = TrainingSession.create(interaction.user.id, date.toISOString(), description, type);
-
-                const typeEmojis = {
-                    entrainement_4v4: '🎯',
-                    entrainement_6v4: '🎯',
-                    match_4v4: '⚔️',
-                    amical: '🤝',
-                    review: '📺',
-                    teambuilding: '🎉'
-                };
-
-                const embed = new EmbedBuilder()
-                    .setTitle(`${typeEmojis[type]} Événement créé`)
-                    .addFields(
-                        { name: 'Type', value: type.charAt(0).toUpperCase() + type.slice(1), inline: true },
-                        { name: 'Date', value: date.toLocaleDateString('fr-FR') + ' à ' + date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }), inline: true },
-                        { name: 'Organisateur', value: `<@${interaction.user.id}>`, inline: true },
-                        { name: 'Description', value: description, inline: false },
-                        { name: 'ID Événement', value: `\`${session.id}\``, inline: false }
-                    )
-                    .setColor(0x00ff00)
-                    .setFooter({ text: 'Utilisez /event participer avec cet ID pour confirmer votre participation' })
-                    .setTimestamp();
-
-                await interaction.reply({ embeds: [embed] });
-            } catch (error) {
-                await interaction.reply({ content: '❌ Format de date invalide. Utilisez DD/MM/YYYY HH:MM', ephemeral: true });
-            }
-            break;
-
-        case 'liste':
-            const sessions = TrainingSession.getUpcoming();
-            
-            if (sessions.length === 0) {
-                await interaction.reply('📅 Aucun événement planifié pour le moment.');
-                return;
-            }
-
-            const listEmbed = new EmbedBuilder()
-                .setTitle('📅 Prochains événements')
-                .setColor(0x0099ff);
-
-            sessions.forEach((session, index) => {
-                const date = new Date(session.date);
-                const organizer = client.users.cache.get(session.coach);
-                const typeEmojis = {
-                    entrainement_4v4: '🎯',
-                    entrainement_6v4: '🎯',
-                    match_4v4: '⚔️',
-                    amical: '🤝',
-                    review: '📺',
-                    teambuilding: '🎉'
-                };
-                
-                listEmbed.addFields({
-                    name: `${typeEmojis[session.type] || '📅'} ${date.toLocaleDateString('fr-FR')} à ${date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`,
-                    value: `**Type:** ${session.type}\n**Organisateur:** ${organizer?.displayName || 'Inconnu'}\n**Description:** ${session.description}\n**Participants:** ${session.participants.length}\n**ID:** \`${session.id}\``,
-                    inline: false
-                });
-            });
-
-            await interaction.reply({ embeds: [listEmbed] });
-            break;
-
-        case 'participer':
-            const eventId = interaction.options.getString('event_id');
-            const success = TrainingSession.addParticipant(eventId, interaction.user.id);
-            
-            if (success) {
-                await interaction.reply(`✅ Participation confirmée pour l'événement \`${eventId}\` !`);
-            } else {
-                await interaction.reply({ content: '❌ Événement introuvable ou vous participez déjà.', ephemeral: true });
-            }
-            break;
-    }
-}
-
-// Gestionnaire de l'équipe
-async function handleTeamCommand(interaction) {
-    const subcommand = interaction.options.getSubcommand();
-
-    switch (subcommand) {
-        case 'role':
-            const joueur = interaction.options.getUser('joueur');
-            const role = interaction.options.getString('role');
-
-            const roles = Database.load('roles');
-            roles[joueur.id] = {
-                role,
-                assignePar: interaction.user.id,
-                date: new Date().toISOString()
-            };
-            Database.save('roles', roles);
-
-            const roleNamesTeam = {
-                assault: 'Assault',
-                support: 'Support',
-                sniper: 'Sniper',
-                flanker: 'Flanker',
-                igl: 'IGL (In-Game Leader)'
-            };
-
-            const embed = new EmbedBuilder()
-                .setTitle('⚔️ Rôle assigné')
-                .setDescription(`${joueur.displayName} a été assigné au rôle **${roleNamesTeam[role]}**`)
-                .setColor(0xff0099)
-                .setTimestamp();
-
-            await interaction.reply({ embeds: [embed] });
-            break;
-
-        case 'composition':
-            const allRoles = Database.load('roles');
-            
-            const composition = {};
-            Object.entries(allRoles).forEach(([userId, data]) => {
-                if (!composition[data.role]) composition[data.role] = [];
-                composition[data.role].push(userId);
-            });
-
-            const compEmbed = new EmbedBuilder()
-                .setTitle('⚔️ Composition de l\'équipe')
-                .setColor(0xff0099);
-
-            const roleNamesComposition = {
-                assault: '🔥 Assault',
-                support: '🛡️ Support',
-                sniper: '🎯 Sniper',
-                flanker: '👻 Flanker',
-                igl: '👑 IGL (In-Game Leader)'
-            };
-
-            Object.entries(roleNamesComposition).forEach(([roleKey, roleName]) => {
-                const players = composition[roleKey] || [];
-                const playerNames = players.map(id => {
-                    const user = client.users.cache.get(id);
-                    return user ? user.displayName : 'Joueur inconnu';
-                }).join(', ') || 'Aucun joueur assigné';
-
-                compEmbed.addFields({
-                    name: roleName,
-                    value: playerNames,
-                    inline: false
-                });
-            });
-
-            await interaction.reply({ embeds: [compEmbed] });
-            break;
-
-        case 'lineup':
-            // Vérification si l'utilisateur est coach
-            const isCoach = interaction.member.roles.cache.some(role => 
-                role.name.toLowerCase().includes('coach unit')
-            );
-            
-            if (!isCoach) {
-                await interaction.reply({ content: '❌ Cette commande est réservée aux coachs.', ephemeral: true });
-                return;
-            }
-
-            const lineup = [];
-            for (let i = 1; i <= 4; i++) {
-                const player = interaction.options.getUser(`joueur${i}`);
-                lineup.push(player);
-            }
-            
-            const lineupData = Database.load('lineup');
-            lineupData.current = {
-                players: lineup.map(p => p.id),
-                coach: interaction.user.id,
-                date: new Date().toISOString()
-            };
-            Database.save('lineup', lineupData);
-            
-            const lineupEmbed = new EmbedBuilder()
-                .setTitle('⚔️ Lineup Match 4v4')
-                .setDescription('Composition officielle pour le prochain match :')
-                .addFields(
-                    lineup.map((player, index) => ({
-                        name: `Joueur ${index + 1}`,
-                        value: player.displayName,
-                        inline: true
-                    }))
-                )
-                .setColor(0x00ff99)
-                .setFooter({ text: 'Match compétitif EVA Battle Arena 4v4' })
-                .setTimestamp();
-            
-            await interaction.reply({ embeds: [lineupEmbed] });
-            break;
-    }
-}
-
-// Gestionnaire d'investissement
-async function handleInvestmentCommand(interaction) {
-    const subcommand = interaction.options.getSubcommand();
-
-    switch (subcommand) {
-        case 'voir':
-            const targetUser = interaction.options.getUser('joueur') || interaction.user;
-            const investment = Database.load('investment')[targetUser.id] || {
-                temps_vocal: 0,
-                participations_events: 0,
-                derniere_activite: null
-            };
-
-            const investEmbed = new EmbedBuilder()
-                .setTitle(`📊 Investissement de ${targetUser.displayName}`)
-                .addFields(
-                    { name: '🎤 Temps vocal total', value: `${Math.floor(investment.temps_vocal / 60)}h ${investment.temps_vocal % 60}min`, inline: true },
-                    { name: '📅 Participations événements', value: investment.participations_events.toString(), inline: true },
-                    { name: '📈 Dernière activité', value: investment.derniere_activite ? new Date(investment.derniere_activite).toLocaleDateString('fr-FR') : 'Jamais', inline: true }
-                )
-                .setColor(0x00ccff)
-                .setThumbnail(targetUser.displayAvatarURL())
-                .setTimestamp();
-
-            await interaction.reply({ embeds: [investEmbed] });
-            break;
-
-        case 'classement':
-            const allInvestment = Database.load('investment');
-            const classement = Object.entries(allInvestment)
-                .map(([userId, data]) => ({ userId, ...data }))
-                .sort((a, b) => (b.temps_vocal + b.participations_events * 60) - (a.temps_vocal + a.participations_events * 60))
-                .slice(0, 10);
-
-            const rankingEmbed = new EmbedBuilder()
-                .setTitle('🏆 Classement d\'investissement')
-                .setDescription('Basé sur le temps vocal et la participation aux événements')
-                .setColor(0xffd700);
-
-            classement.forEach((player, index) => {
-                const user = client.users.cache.get(player.userId);
-                const medal = index < 3 ? ['🥇', '🥈', '🥉'][index] : `${index + 1}.`;
-                const score = Math.floor(player.temps_vocal / 60) + player.participations_events;
-                rankingEmbed.addFields({
-                    name: `${medal} ${user?.displayName || 'Joueur inconnu'}`,
-                    value: `Score: ${score} | Vocal: ${Math.floor(player.temps_vocal / 60)}h | Events: ${player.participations_events}`,
-                    inline: false
-                });
-            });
-
-            await interaction.reply({ embeds: [rankingEmbed] });
-            break;
-    }
-}
-
-// Gestionnaire des objectifs
-async function handleObjectiveCommand(interaction) {
-    const subcommand = interaction.options.getSubcommand();
-
-    switch (subcommand) {
-        case 'definir':
-            const titre = interaction.options.getString('titre');
-            const description = interaction.options.getString('description');
-            const echeance = interaction.options.getString('echeance');
-
-            const objectives = Database.load('objectives');
-            const objId = Date.now().toString();
-            
-            objectives[objId] = {
-                id: objId,
-                titre,
-                description,
-                echeance,
-                auteur: interaction.user.id,
-                date_creation: new Date().toISOString(),
-                complete: false
-            };
-            
-            Database.save('objectives', objectives);
-
-            const objEmbed = new EmbedBuilder()
-                .setTitle('🎯 Nouvel objectif défini')
-                .addFields(
-                    { name: 'Titre', value: titre, inline: false },
-                    { name: 'Description', value: description, inline: false },
-                    { name: 'Échéance', value: echeance || 'Non définie', inline: true },
-                    { name: 'Défini par', value: `<@${interaction.user.id}>`, inline: true },
-                    { name: 'ID Objectif', value: `\`${objId}\``, inline: true }
-                )
-                .setColor(0x00ffff)
-                .setTimestamp();
-
-            await interaction.reply({ embeds: [objEmbed] });
-            break;
-
-        case 'liste':
-            const allObjectives = Database.load('objectives');
-            const objectivesList = Object.values(allObjectives)
-                .filter(obj => !obj.complete)
-                .sort((a, b) => new Date(a.date_creation) - new Date(b.date_creation));
-
-            if (objectivesList.length === 0) {
-                await interaction.reply('🎯 Aucun objectif en cours. Temps de s\'en fixer de nouveaux !');
-                return;
-            }
-
-            const listObjEmbed = new EmbedBuilder()
-                .setTitle('🎯 Objectifs en cours')
-                .setColor(0x00ffff);
-
-            objectivesList.forEach(obj => {
-                const auteur = client.users.cache.get(obj.auteur);
-                listObjEmbed.addFields({
-                    name: obj.titre,
-                    value: `${obj.description}\n**Échéance:** ${obj.echeance || 'Non définie'}\n**Par:** ${auteur?.displayName || 'Inconnu'}\n**ID:** \`${obj.id}\``,
-                    inline: false
-                });
-            });
-
-            await interaction.reply({ embeds: [listObjEmbed] });
-            break;
-
-        case 'completer':
-            const objectifId = interaction.options.getString('objectif_id');
-            const objectives2 = Database.load('objectives');
-            
-            if (objectives2[objectifId]) {
-                objectives2[objectifId].complete = true;
-                objectives2[objectifId].complete_par = interaction.user.id;
-                objectives2[objectifId].date_completion = new Date().toISOString();
-                Database.save('objectives', objectives2);
-
-                const completeEmbed = new EmbedBuilder()
-                    .setTitle('🎉 Objectif accompli !')
-                    .setDescription(`**${objectives2[objectifId].titre}** a été marqué comme terminé !`)
-                    .addFields(
-                        { name: 'Complété par', value: `<@${interaction.user.id}>`, inline: true },
-                        { name: 'Date', value: new Date().toLocaleDateString('fr-FR'), inline: true }
-                    )
-                    .setColor(0x00ff00)
-                    .setTimestamp();
-
-                await interaction.reply({ embeds: [completeEmbed] });
-            } else {
-                await interaction.reply({ content: '❌ Objectif introuvable.', ephemeral: true });
-            }
-            break;
-    }
-}
-
 // Gestionnaire des matchs (simplifié)
 async function handleMatchCommand(interaction) {
     const subcommand = interaction.options.getSubcommand();
@@ -1028,7 +351,7 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
-// Gestionnaire des commandes coach (simplifié)
+// Gestionnaire des commandes coach
 async function handleCoachCommand(interaction) {
     const subcommand = interaction.options.getSubcommand();
     
@@ -1284,8 +607,9 @@ setInterval(() => {
             const channel = client.channels.cache.find(ch => ch.name === 'général');
             if (channel) {
                 const typeEmojis = {
-                    entrainement: '🎯',
-                    match: '⚔️',
+                    entrainement_4v4: '🎯',
+                    entrainement_6v4: '🎯',
+                    match_4v4: '⚔️',
                     amical: '🤝',
                     review: '📺',
                     teambuilding: '🎉'
@@ -1376,7 +700,7 @@ client.once('ready', () => {
             .setTitle('🎮 Bot EVA Team est en ligne !')
             .setDescription('Je suis là pour vous aider à progresser vers la **Division 2** !')
             .addFields(
-                { name: '🚀 Fonctionnalités principales', value: '• Gestion des événements\n• Suivi de l\'investissement\n• Gestion des objectifs\n• Outils pour les coachs', inline: false },
+                { name: '🚀 Fonctionnalités principales', value: '• Gestion des événements\n• Suivi de l\'investissement\n• Gestion des objectifs\n• Système de votes\n• Outils pour les coachs', inline: false },
                 { name: '📖 Aide', value: 'Tapez `/aide` pour voir toutes les commandes !', inline: false }
             )
             .setColor(0x00ff00)
@@ -1389,4 +713,685 @@ client.once('ready', () => {
 });
 
 // Démarrage du bot
-client.login(process.env.DISCORD_TOKEN);
+client.login(process.env.DISCORD_TOKEN);const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, SlashCommandBuilder } = require('discord.js');
+const fs = require('fs');
+const path = require('path');
+
+// Configuration du bot
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildVoiceStates
+    ]
+});
+
+// Base de données simple en fichier JSON
+const DB_PATH = './data/';
+if (!fs.existsSync(DB_PATH)) fs.mkdirSync(DB_PATH, { recursive: true });
+
+// Système de stockage des données
+class Database {
+    static load(file) {
+        const filepath = path.join(DB_PATH, `${file}.json`);
+        if (fs.existsSync(filepath)) {
+            return JSON.parse(fs.readFileSync(filepath, 'utf8'));
+        }
+        return {};
+    }
+
+    static save(file, data) {
+        const filepath = path.join(DB_PATH, `${file}.json`);
+        fs.writeFileSync(filepath, JSON.stringify(data, null, 2));
+    }
+}
+
+// Gestion des sessions d'entraînement
+class TrainingSession {
+    static create(coachId, date, description, type = 'entrainement') {
+        const sessions = Database.load('training');
+        const id = Date.now().toString();
+        
+        sessions[id] = {
+            id,
+            coach: coachId,
+            date,
+            description,
+            type,
+            participants: [],
+            status: 'planifiee',
+            created: new Date().toISOString()
+        };
+        
+        Database.save('training', sessions);
+        return sessions[id];
+    }
+
+    static getUpcoming() {
+        const sessions = Database.load('training');
+        const now = new Date();
+        
+        return Object.values(sessions)
+            .filter(s => new Date(s.date) > now)
+            .sort((a, b) => new Date(a.date) - new Date(b.date));
+    }
+
+    static addParticipant(sessionId, userId) {
+        const sessions = Database.load('training');
+        if (sessions[sessionId] && !sessions[sessionId].participants.includes(userId)) {
+            sessions[sessionId].participants.push(userId);
+            Database.save('training', sessions);
+            return true;
+        }
+        return false;
+    }
+}
+
+// Commandes slash
+const commands = [
+    // Commande pour les entraînements et événements
+    new SlashCommandBuilder()
+        .setName('event')
+        .setDescription('Gère les événements d\'équipe')
+        .addSubcommand(sub => 
+            sub.setName('creer')
+                .setDescription('Créer un événement (entraînement, match, etc.)')
+                .addStringOption(opt => opt.setName('type').setDescription('Type d\'événement').setRequired(true)
+                    .addChoices(
+                        { name: '🎯 Entraînement 4v4', value: 'entrainement_4v4' },
+                        { name: '🎯 Entraînement 6v4', value: 'entrainement_6v4' },
+                        { name: '⚔️ Match officiel 4v4', value: 'match_4v4' },
+                        { name: '🤝 Match amical', value: 'amical' },
+                        { name: '📺 Review de match', value: 'review' },
+                        { name: '🎉 Événement team building', value: 'teambuilding' }
+                    ))
+                .addStringOption(opt => opt.setName('date').setDescription('Date (DD/MM/YYYY HH:MM)').setRequired(true))
+                .addStringOption(opt => opt.setName('description').setDescription('Description de l\'événement').setRequired(true))
+        )
+        .addSubcommand(sub =>
+            sub.setName('liste')
+                .setDescription('Voir les prochains événements')
+        )
+        .addSubcommand(sub =>
+            sub.setName('participer')
+                .setDescription('Confirmer sa participation à un événement')
+                .addStringOption(opt => opt.setName('event_id').setDescription('ID de l\'événement').setRequired(true))
+        ),
+
+    // Commande pour la gestion des rôles dans l'équipe
+    new SlashCommandBuilder()
+        .setName('equipe')
+        .setDescription('Gestion de l\'équipe')
+        .addSubcommand(sub =>
+            sub.setName('role')
+                .setDescription('Assigner un rôle EVA à un joueur')
+                .addUserOption(opt => opt.setName('joueur').setDescription('Le joueur').setRequired(true))
+                .addStringOption(opt => opt.setName('role').setDescription('Rôle EVA').setRequired(true)
+                    .addChoices(
+                        { name: 'Assault', value: 'assault' },
+                        { name: 'Support', value: 'support' },
+                        { name: 'Sniper', value: 'sniper' },
+                        { name: 'Flanker', value: 'flanker' },
+                        { name: 'IGL (In-Game Leader)', value: 'igl' }
+                    ))
+        )
+        .addSubcommand(sub =>
+            sub.setName('composition')
+                .setDescription('Voir la composition actuelle de l\'équipe')
+        )
+        .addSubcommand(sub =>
+            sub.setName('lineup')
+                .setDescription('Définir la composition pour le prochain match (4v4)')
+                .addUserOption(opt => opt.setName('joueur1').setDescription('Joueur 1').setRequired(true))
+                .addUserOption(opt => opt.setName('joueur2').setDescription('Joueur 2').setRequired(true))
+                .addUserOption(opt => opt.setName('joueur3').setDescription('Joueur 3').setRequired(true))
+                .addUserOption(opt => opt.setName('joueur4').setDescription('Joueur 4').setRequired(true))
+        ),
+
+    // Commande de suivi d'investissement (temps vocal, participation)
+    new SlashCommandBuilder()
+        .setName('investissement')
+        .setDescription('Suivi de l\'investissement des joueurs')
+        .addSubcommand(sub =>
+            sub.setName('voir')
+                .setDescription('Voir l\'investissement d\'un joueur')
+                .addUserOption(opt => opt.setName('joueur').setDescription('Le joueur'))
+        )
+        .addSubcommand(sub =>
+            sub.setName('classement')
+                .setDescription('Classement d\'investissement de l\'équipe')
+        ),
+
+    // Commande pour les objectifs d'équipe
+    new SlashCommandBuilder()
+        .setName('objectif')
+        .setDescription('Gestion des objectifs d\'équipe')
+        .addSubcommand(sub =>
+            sub.setName('definir')
+                .setDescription('Définir un nouvel objectif')
+                .addStringOption(opt => opt.setName('titre').setDescription('Titre de l\'objectif').setRequired(true))
+                .addStringOption(opt => opt.setName('description').setDescription('Description détaillée').setRequired(true))
+                .addStringOption(opt => opt.setName('echeance').setDescription('Date limite (DD/MM/YYYY)'))
+        )
+        .addSubcommand(sub =>
+            sub.setName('liste')
+                .setDescription('Voir tous les objectifs en cours')
+        )
+        .addSubcommand(sub =>
+            sub.setName('completer')
+                .setDescription('Marquer un objectif comme accompli')
+                .addStringOption(opt => opt.setName('objectif_id').setDescription('ID de l\'objectif').setRequired(true))
+        ),
+
+    // Commande pour les résultats de matchs (simple)
+    new SlashCommandBuilder()
+        .setName('match')
+        .setDescription('Gestion des résultats de matchs')
+        .addSubcommand(sub =>
+            sub.setName('resultat')
+                .setDescription('Enregistrer le résultat d\'un match')
+                .addStringOption(opt => opt.setName('adversaire').setDescription('Équipe adverse').setRequired(true))
+                .addStringOption(opt => opt.setName('resultat').setDescription('Résultat').setRequired(true)
+                    .addChoices(
+                        { name: '✅ Victoire', value: 'victoire' },
+                        { name: '❌ Défaite', value: 'defaite' }
+                    ))
+                .addStringOption(opt => opt.setName('score').setDescription('Score (ex: 13-8)'))
+                .addStringOption(opt => opt.setName('notes').setDescription('Notes sur le match'))
+        )
+        .addSubcommand(sub =>
+            sub.setName('historique')
+                .setDescription('Voir l\'historique des matchs')
+        ),
+
+    // Commande de motivation manuelle
+    new SlashCommandBuilder()
+        .setName('motivation')
+        .setDescription('Messages de motivation pour l\'équipe')
+        .addSubcommand(sub =>
+            sub.setName('citation')
+                .setDescription('Afficher une citation motivante')
+        )
+        .addSubcommand(sub =>
+            sub.setName('message')
+                .setDescription('Envoyer un message motivant personnalisé')
+                .addStringOption(opt => opt.setName('message').setDescription('Votre message motivant').setRequired(true))
+        ),
+
+    // Système de votes
+    new SlashCommandBuilder()
+        .setName('vote')
+        .setDescription('Système de votes pour l\'équipe')
+        .addSubcommand(sub =>
+            sub.setName('creer')
+                .setDescription('Créer un nouveau vote')
+                .addStringOption(opt => opt.setName('type').setDescription('Type de vote').setRequired(true)
+                    .addChoices(
+                        { name: '🗺️ Préférence de map', value: 'map_preference' },
+                        { name: '⚔️ Stratégie à adopter', value: 'strategy' },
+                        { name: '📅 Horaire d\'entraînement', value: 'training_time' },
+                        { name: '🎯 Objectif prioritaire', value: 'objective' },
+                        { name: '❓ Vote personnalisé', value: 'custom' }
+                    ))
+                .addStringOption(opt => opt.setName('question').setDescription('Question du vote').setRequired(true))
+                .addStringOption(opt => opt.setName('options').setDescription('Options séparées par | (ex: Map1|Map2|Map3)').setRequired(true))
+                .addIntegerOption(opt => opt.setName('duree').setDescription('Durée en heures (défaut: 24h)'))
+        )
+        .addSubcommand(sub =>
+            sub.setName('liste')
+                .setDescription('Voir tous les votes en cours')
+        )
+        .addSubcommand(sub =>
+            sub.setName('resultats')
+                .setDescription('Voir les résultats d\'un vote')
+                .addStringOption(opt => opt.setName('vote_id').setDescription('ID du vote').setRequired(true))
+        )
+        .addSubcommand(sub =>
+            sub.setName('fermer')
+                .setDescription('Fermer un vote (Coach Unit uniquement)')
+                .addStringOption(opt => opt.setName('vote_id').setDescription('ID du vote').setRequired(true))
+        ),
+
+    // Commandes coach simplifiées
+    new SlashCommandBuilder()
+        .setName('coach')
+        .setDescription('Outils pour les coachs')
+        .addSubcommand(sub =>
+            sub.setName('note')
+                .setDescription('Ajouter une note d\'équipe')
+                .addStringOption(opt => opt.setName('sujet').setDescription('Sujet de la note').setRequired(true))
+                .addStringOption(opt => opt.setName('contenu').setDescription('Contenu de la note').setRequired(true))
+        )
+        .addSubcommand(sub =>
+            sub.setName('notes')
+                .setDescription('Voir toutes les notes d\'équipe')
+        )
+        .addSubcommand(sub =>
+            sub.setName('bilan')
+                .setDescription('Faire un bilan d\'équipe')
+        )
+];
+
+// Citations motivantes pour l'e-sport
+const motivationalQuotes = [
+    "🔥 **Division 2 nous attend !** Chaque match nous rapproche de notre objectif !",
+    "⚔️ **L'équipe qui communique ensemble, gagne ensemble !** Notre coordination fait la différence !",
+    "🎯 **Précision, stratégie, teamwork !** EVA Battle Arena récompense les équipes organisées !",
+    "💪 **De Division 3 à Division 1 !** Un pas à la fois, mais toujours vers le haut !",
+    "🏆 **Chaque entraînement compte !** C'est notre investissement qui paiera !",
+    "🚀 **Nous sommes les pionniers de l'e-sport VR !** Montrons l'exemple !",
+    "⭐ **Nos coachs nous guident, notre détermination nous mène à la victoire !**"
+];
+
+// Événement de connexion du bot
+client.once('ready', () => {
+    console.log(`🎮 Bot EVA Team connecté en tant que ${client.user.tag}`);
+    
+    // Mise à jour du statut
+    client.user.setActivity('EVA Battle Arena | Division 3 → Division 2', { type: 'PLAYING' });
+    
+    // Enregistrement des commandes slash
+    client.application.commands.set(commands);
+});
+
+// Gestion des commandes slash
+client.on('interactionCreate', async interaction => {
+    if (!interaction.isCommand()) return;
+
+    const { commandName } = interaction;
+
+    try {
+        switch (commandName) {
+            case 'event':
+                await handleEventCommand(interaction);
+                break;
+            case 'equipe':
+                await handleTeamCommand(interaction);
+                break;
+            case 'investissement':
+                await handleInvestmentCommand(interaction);
+                break;
+            case 'objectif':
+                await handleObjectiveCommand(interaction);
+                break;
+            case 'match':
+                await handleMatchCommand(interaction);
+                break;
+            case 'motivation':
+                await handleMotivationCommand(interaction);
+                break;
+            case 'vote':
+                await handleVoteCommand(interaction);
+                break;
+            case 'coach':
+                await handleCoachCommand(interaction);
+                break;
+        }
+    } catch (error) {
+        console.error('Erreur lors de l\'exécution de la commande:', error);
+        await interaction.reply({ content: '❌ Une erreur s\'est produite lors de l\'exécution de la commande.', ephemeral: true });
+    }
+});
+
+// Gestionnaire des événements
+async function handleEventCommand(interaction) {
+    const subcommand = interaction.options.getSubcommand();
+
+    switch (subcommand) {
+        case 'creer':
+            const type = interaction.options.getString('type');
+            const dateStr = interaction.options.getString('date');
+            const description = interaction.options.getString('description');
+
+            try {
+                const [datePart, timePart] = dateStr.split(' ');
+                const [day, month, year] = datePart.split('/');
+                const [hour, minute] = timePart.split(':');
+                const date = new Date(year, month - 1, day, hour, minute);
+
+                const session = TrainingSession.create(interaction.user.id, date.toISOString(), description, type);
+
+                const typeEmojis = {
+                    entrainement_4v4: '🎯',
+                    entrainement_6v4: '🎯',
+                    match_4v4: '⚔️',
+                    amical: '🤝',
+                    review: '📺',
+                    teambuilding: '🎉'
+                };
+
+                const embed = new EmbedBuilder()
+                    .setTitle(`${typeEmojis[type]} Événement créé`)
+                    .addFields(
+                        { name: 'Type', value: type.charAt(0).toUpperCase() + type.slice(1), inline: true },
+                        { name: 'Date', value: date.toLocaleDateString('fr-FR') + ' à ' + date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }), inline: true },
+                        { name: 'Organisateur', value: `<@${interaction.user.id}>`, inline: true },
+                        { name: 'Description', value: description, inline: false },
+                        { name: 'ID Événement', value: `\`${session.id}\``, inline: false }
+                    )
+                    .setColor(0x00ff00)
+                    .setFooter({ text: 'Utilisez /event participer avec cet ID pour confirmer votre participation' })
+                    .setTimestamp();
+
+                await interaction.reply({ embeds: [embed] });
+            } catch (error) {
+                await interaction.reply({ content: '❌ Format de date invalide. Utilisez DD/MM/YYYY HH:MM', ephemeral: true });
+            }
+            break;
+
+        case 'liste':
+            const sessions = TrainingSession.getUpcoming();
+            
+            if (sessions.length === 0) {
+                await interaction.reply('📅 Aucun événement planifié pour le moment.');
+                return;
+            }
+
+            const listEmbed = new EmbedBuilder()
+                .setTitle('📅 Prochains événements')
+                .setColor(0x0099ff);
+
+            sessions.forEach((session, index) => {
+                const date = new Date(session.date);
+                const organizer = client.users.cache.get(session.coach);
+                const typeEmojis = {
+                    entrainement_4v4: '🎯',
+                    entrainement_6v4: '🎯',
+                    match_4v4: '⚔️',
+                    amical: '🤝',
+                    review: '📺',
+                    teambuilding: '🎉'
+                };
+                
+                listEmbed.addFields({
+                    name: `${typeEmojis[session.type] || '📅'} ${date.toLocaleDateString('fr-FR')} à ${date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`,
+                    value: `**Type:** ${session.type}\n**Organisateur:** ${organizer?.displayName || 'Inconnu'}\n**Description:** ${session.description}\n**Participants:** ${session.participants.length}\n**ID:** \`${session.id}\``,
+                    inline: false
+                });
+            });
+
+            await interaction.reply({ embeds: [listEmbed] });
+            break;
+
+        case 'participer':
+            const eventId = interaction.options.getString('event_id');
+            const success = TrainingSession.addParticipant(eventId, interaction.user.id);
+            
+            if (success) {
+                await interaction.reply(`✅ Participation confirmée pour l'événement \`${eventId}\` !`);
+            } else {
+                await interaction.reply({ content: '❌ Événement introuvable ou vous participez déjà.', ephemeral: true });
+            }
+            break;
+    }
+}
+
+// Gestionnaire de l'équipe
+async function handleTeamCommand(interaction) {
+    const subcommand = interaction.options.getSubcommand();
+
+    switch (subcommand) {
+        case 'role':
+            const joueur = interaction.options.getUser('joueur');
+            const role = interaction.options.getString('role');
+
+            const roles = Database.load('roles');
+            roles[joueur.id] = {
+                role,
+                assignePar: interaction.user.id,
+                date: new Date().toISOString()
+            };
+            Database.save('roles', roles);
+
+            const roleNamesTeam = {
+                assault: 'Assault',
+                support: 'Support',
+                sniper: 'Sniper',
+                flanker: 'Flanker',
+                igl: 'IGL (In-Game Leader)'
+            };
+
+            const embed = new EmbedBuilder()
+                .setTitle('⚔️ Rôle assigné')
+                .setDescription(`${joueur.displayName} a été assigné au rôle **${roleNamesTeam[role]}**`)
+                .setColor(0xff0099)
+                .setTimestamp();
+
+            await interaction.reply({ embeds: [embed] });
+            break;
+
+        case 'composition':
+            const allRoles = Database.load('roles');
+            
+            const composition = {};
+            Object.entries(allRoles).forEach(([userId, data]) => {
+                if (!composition[data.role]) composition[data.role] = [];
+                composition[data.role].push(userId);
+            });
+
+            const compEmbed = new EmbedBuilder()
+                .setTitle('⚔️ Composition de l\'équipe')
+                .setColor(0xff0099);
+
+            const roleNamesComposition = {
+                assault: '🔥 Assault',
+                support: '🛡️ Support',
+                sniper: '🎯 Sniper',
+                flanker: '👻 Flanker',
+                igl: '👑 IGL (In-Game Leader)'
+            };
+
+            Object.entries(roleNamesComposition).forEach(([roleKey, roleName]) => {
+                const players = composition[roleKey] || [];
+                const playerNames = players.map(id => {
+                    const user = client.users.cache.get(id);
+                    return user ? user.displayName : 'Joueur inconnu';
+                }).join(', ') || 'Aucun joueur assigné';
+
+                compEmbed.addFields({
+                    name: roleName,
+                    value: playerNames,
+                    inline: false
+                });
+            });
+
+            await interaction.reply({ embeds: [compEmbed] });
+            break;
+
+        case 'lineup':
+            // Vérification si l'utilisateur est coach
+            const isCoach = interaction.member.roles.cache.some(role => 
+                role.name.toLowerCase().includes('coach unit')
+            );
+            
+            if (!isCoach) {
+                await interaction.reply({ content: '❌ Cette commande est réservée aux Coach Unit.', ephemeral: true });
+                return;
+            }
+
+            const lineup = [];
+            for (let i = 1; i <= 4; i++) {
+                const player = interaction.options.getUser(`joueur${i}`);
+                lineup.push(player);
+            }
+            
+            const lineupData = Database.load('lineup');
+            lineupData.current = {
+                players: lineup.map(p => p.id),
+                coach: interaction.user.id,
+                date: new Date().toISOString()
+            };
+            Database.save('lineup', lineupData);
+            
+            const lineupEmbed = new EmbedBuilder()
+                .setTitle('⚔️ Lineup Match 4v4')
+                .setDescription('Composition officielle pour le prochain match :')
+                .addFields(
+                    lineup.map((player, index) => ({
+                        name: `Joueur ${index + 1}`,
+                        value: player.displayName,
+                        inline: true
+                    }))
+                )
+                .setColor(0x00ff99)
+                .setFooter({ text: 'Match compétitif EVA Battle Arena 4v4' })
+                .setTimestamp();
+            
+            await interaction.reply({ embeds: [lineupEmbed] });
+            break;
+    }
+}
+
+// Gestionnaire d'investissement
+async function handleInvestmentCommand(interaction) {
+    const subcommand = interaction.options.getSubcommand();
+
+    switch (subcommand) {
+        case 'voir':
+            const targetUser = interaction.options.getUser('joueur') || interaction.user;
+            const investment = Database.load('investment')[targetUser.id] || {
+                temps_vocal: 0,
+                participations_events: 0,
+                derniere_activite: null
+            };
+
+            const investEmbed = new EmbedBuilder()
+                .setTitle(`📊 Investissement de ${targetUser.displayName}`)
+                .addFields(
+                    { name: '🎤 Temps vocal total', value: `${Math.floor(investment.temps_vocal / 60)}h ${investment.temps_vocal % 60}min`, inline: true },
+                    { name: '📅 Participations événements', value: investment.participations_events.toString(), inline: true },
+                    { name: '📈 Dernière activité', value: investment.derniere_activite ? new Date(investment.derniere_activite).toLocaleDateString('fr-FR') : 'Jamais', inline: true }
+                )
+                .setColor(0x00ccff)
+                .setThumbnail(targetUser.displayAvatarURL())
+                .setTimestamp();
+
+            await interaction.reply({ embeds: [investEmbed] });
+            break;
+
+        case 'classement':
+            const allInvestment = Database.load('investment');
+            const classement = Object.entries(allInvestment)
+                .map(([userId, data]) => ({ userId, ...data }))
+                .sort((a, b) => (b.temps_vocal + b.participations_events * 60) - (a.temps_vocal + a.participations_events * 60))
+                .slice(0, 10);
+
+            const rankingEmbed = new EmbedBuilder()
+                .setTitle('🏆 Classement d\'investissement')
+                .setDescription('Basé sur le temps vocal et la participation aux événements')
+                .setColor(0xffd700);
+
+            classement.forEach((player, index) => {
+                const user = client.users.cache.get(player.userId);
+                const medal = index < 3 ? ['🥇', '🥈', '🥉'][index] : `${index + 1}.`;
+                const score = Math.floor(player.temps_vocal / 60) + player.participations_events;
+                rankingEmbed.addFields({
+                    name: `${medal} ${user?.displayName || 'Joueur inconnu'}`,
+                    value: `Score: ${score} | Vocal: ${Math.floor(player.temps_vocal / 60)}h | Events: ${player.participations_events}`,
+                    inline: false
+                });
+            });
+
+            await interaction.reply({ embeds: [rankingEmbed] });
+            break;
+    }
+}
+
+// Gestionnaire des objectifs
+async function handleObjectiveCommand(interaction) {
+    const subcommand = interaction.options.getSubcommand();
+
+    switch (subcommand) {
+        case 'definir':
+            const titre = interaction.options.getString('titre');
+            const description = interaction.options.getString('description');
+            const echeance = interaction.options.getString('echeance');
+
+            const objectives = Database.load('objectives');
+            const objId = Date.now().toString();
+            
+            objectives[objId] = {
+                id: objId,
+                titre,
+                description,
+                echeance,
+                auteur: interaction.user.id,
+                date_creation: new Date().toISOString(),
+                complete: false
+            };
+            
+            Database.save('objectives', objectives);
+
+            const objEmbed = new EmbedBuilder()
+                .setTitle('🎯 Nouvel objectif défini')
+                .addFields(
+                    { name: 'Titre', value: titre, inline: false },
+                    { name: 'Description', value: description, inline: false },
+                    { name: 'Échéance', value: echeance || 'Non définie', inline: true },
+                    { name: 'Défini par', value: `<@${interaction.user.id}>`, inline: true },
+                    { name: 'ID Objectif', value: `\`${objId}\``, inline: true }
+                )
+                .setColor(0x00ffff)
+                .setTimestamp();
+
+            await interaction.reply({ embeds: [objEmbed] });
+            break;
+
+        case 'liste':
+            const allObjectives = Database.load('objectives');
+            const objectivesList = Object.values(allObjectives)
+                .filter(obj => !obj.complete)
+                .sort((a, b) => new Date(a.date_creation) - new Date(b.date_creation));
+
+            if (objectivesList.length === 0) {
+                await interaction.reply('🎯 Aucun objectif en cours. Temps de s\'en fixer de nouveaux !');
+                return;
+            }
+
+            const listObjEmbed = new EmbedBuilder()
+                .setTitle('🎯 Objectifs en cours')
+                .setColor(0x00ffff);
+
+            objectivesList.forEach(obj => {
+                const auteur = client.users.cache.get(obj.auteur);
+                listObjEmbed.addFields({
+                    name: obj.titre,
+                    value: `${obj.description}\n**Échéance:** ${obj.echeance || 'Non définie'}\n**Par:** ${auteur?.displayName || 'Inconnu'}\n**ID:** \`${obj.id}\``,
+                    inline: false
+                });
+            });
+
+            await interaction.reply({ embeds: [listObjEmbed] });
+            break;
+
+        case 'completer':
+            const objectifId = interaction.options.getString('objectif_id');
+            const objectives2 = Database.load('objectives');
+            
+            if (objectives2[objectifId]) {
+                objectives2[objectifId].complete = true;
+                objectives2[objectifId].complete_par = interaction.user.id;
+                objectives2[objectifId].date_completion = new Date().toISOString();
+                Database.save('objectives', objectives2);
+
+                const completeEmbed = new EmbedBuilder()
+                    .setTitle('🎉 Objectif accompli !')
+                    .setDescription(`**${objectives2[objectifId].titre}** a été marqué comme terminé !`)
+                    .addFields(
+                        { name: 'Complété par', value: `<@${interaction.user.id}>`, inline: true },
+                        { name: 'Date', value: new Date().toLocaleDateString('fr-FR'), inline: true }
+                    )
+                    .setColor(0x00ff00)
+                    .setTimestamp();
+
+                await interaction.reply({ embeds: [completeEmbed] });
+            } else {
+                await interaction.reply({ content: '❌ Objectif introuvable.', ephemeral: true });
+            }
+            break;
+    }
+}
+
+// Gestionnaire des matchs (simplifié
