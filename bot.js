@@ -1078,4 +1078,4 @@ client.once('ready', () => {
 });
 
 // Démarrage du bot
-client.login('VOTRE_TOKEN_BOT_DISCORD');
+client.login(process.env.DISCORD_TOKEN);
